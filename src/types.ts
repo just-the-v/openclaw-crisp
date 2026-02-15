@@ -23,8 +23,10 @@ export const CrispConfigSchema = z.object({
   enabled: z.boolean().default(true),
   /** Display name for this account */
   name: z.string().optional(),
-  /** AI auto-responds to visitors */
-  autoReply: z.boolean().default(true),
+  /** AI auto-responds to visitors (disabled by default) */
+  autoReply: z.boolean().default(false),
+  /** Auto-reply message template ({name} will be replaced with visitor name) */
+  autoReplyMessage: z.string().default("Hello {name}! Thanks for reaching out. We'll get back to you shortly."),
   /** Name shown as operator in Crisp */
   operatorName: z.string().default("Assistant"),
   /** Avatar URL for operator */
