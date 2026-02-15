@@ -16,6 +16,12 @@ import { setCrispRuntime } from "./src/runtime.js";
 // Re-export types for consumers
 export * from "./src/types.js";
 export { createCrispClient } from "./src/api-client.js";
+export { 
+  getPendingReply, 
+  removePendingReply, 
+  sendCrispReply,
+} from "./src/monitor.js";
+export type { PendingReply } from "./src/pending-replies.js";
 
 /**
  * Plugin definition for Clawdbot
