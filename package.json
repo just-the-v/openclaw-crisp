@@ -1,0 +1,84 @@
+{
+  "name": "openclaw-crisp",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "OpenClaw channel plugin for Crisp chat - receive and respond to Crisp conversations",
+  "author": "Hugo Vast <hugo.vast@gmail.com>",
+  "license": "MIT",
+  "keywords": [
+    "openclaw",
+    "clawdbot",
+    "crisp",
+    "chat",
+    "support",
+    "plugin",
+    "channel"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/just-the-v/openclaw-crisp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/just-the-v/openclaw-crisp/issues"
+  },
+  "homepage": "https://github.com/just-the-v/openclaw-crisp#readme",
+  "openclaw": {
+    "extensions": [
+      "./index.ts"
+    ],
+    "channel": {
+      "id": "crisp",
+      "label": "Crisp",
+      "selectionLabel": "Crisp (website chat)",
+      "docsPath": "/channels/crisp",
+      "docsLabel": "crisp",
+      "blurb": "Crisp website chat integration via webhooks + REST API.",
+      "order": 80,
+      "aliases": ["crisp-chat"]
+    },
+    "install": {
+      "npmSpec": "openclaw-crisp",
+      "localPath": "extensions/crisp",
+      "defaultChoice": "npm"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "index.ts",
+    "src",
+    "openclaw.plugin.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "lint": "eslint src index.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.0.0",
+    "eslint": "^9.0.0"
+  },
+  "peerDependencies": {
+    "openclaw": ">=2026.1.0"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}
