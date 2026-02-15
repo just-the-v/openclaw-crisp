@@ -44,6 +44,13 @@ export interface CrispApiClient {
     sessionId: string,
     state: "resolved" | "unresolved"
   ): Promise<void>;
+
+  /**
+   * Probe a website to test API connectivity and credentials
+   */
+  probeWebsite(
+    websiteId: string
+  ): Promise<{ ok: true; website: { name: string; domain: string } } | { ok: false; error: string }>;
 }
 
 /**
@@ -140,6 +147,17 @@ export function createCrispClient(opts: CrispApiClientOptions): CrispApiClient {
         method: "PATCH",
         body: JSON.stringify({ state }),
       });
+    },
+
+    async probeWebsite(websiteId: string) {
+      try {
+        const data = await crispFetch<{ name: string; domain: string }>(
+          `/website/${websiteId}`
+        );
+        return { ok: true as const, website: { name: data.name, domain: data.domain } };
+      } catch (err) {
+        return { ok: false as const, error: err instanceof Error ? err.message : String(err) };
+      }
     },
   };
 }
