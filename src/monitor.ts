@@ -8,7 +8,6 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import {
   DEFAULT_WEBHOOK_PATH,
   buildCrispDashboardUrl,
-  truncateText,
   type CrispConfig,
   type CrispSessionState,
   type CrispWebhookPayload,
@@ -186,21 +185,16 @@ async function handleInboundMessage(
   payload: CrispWebhookPayload
 ): Promise<void> {
   const { data } = payload;
-  const runtime = crispRuntime;
-
-  if (!runtime) {
-    console.warn("[crisp] No runtime available, skipping message");
-    return;
-  }
 
   // Skip non-user messages
   if (data.from !== "user") {
+    console.log(`[crisp] Skipping message from: ${data.from}`);
     return;
   }
 
   // Skip non-text messages for now
   if (data.type && data.type !== "text") {
-    runtime.log?.info?.(`[crisp] Skipping non-text message type: ${data.type}`);
+    console.log(`[crisp] Skipping non-text message type: ${data.type}`);
     return;
   }
 
@@ -208,65 +202,52 @@ async function handleInboundMessage(
   const visitorName = data.user?.nickname || "Visitor";
   const messageText = data.content || "";
 
+  console.log(`[crisp] 📩 Message from ${visitorName}: "${messageText}"`);
+  console.log(`[crisp] Session: ${sessionId}, Website: ${data.website_id}`);
+
   // Track session for deduplication
   const session = trackSession(
     sessionId,
     data.website_id,
     accountId,
     visitorName,
-    undefined // Email comes from separate event
+    undefined
   );
 
   // Notify on new conversation
   if (session.isNew) {
+    console.log(`[crisp] 🆕 New conversation started`);
     await notifyNewConversation(config, session);
   }
 
   // Skip if auto-reply is disabled
   if (!config.autoReply) {
-    runtime.log?.info?.(`[crisp] Auto-reply disabled, skipping AI response`);
+    console.log(`[crisp] Auto-reply disabled, message logged only`);
     return;
   }
 
-  runtime.log?.info?.(`[crisp] Processing message from ${visitorName}: ${truncateText(messageText, 50)}`);
-
-  // Route to OpenClaw for AI response
-  const response = await runtime.handleInboundMessage({
-    channel: "crisp",
-    accountId,
-    senderId: sessionId,
-    senderName: visitorName,
-    chatId: sessionId,
-    text: messageText,
-    messageId: String(data.fingerprint || data.timestamp),
-    context: {
-      websiteId: data.website_id,
-      crispDashboardUrl: buildCrispDashboardUrl(data.website_id, sessionId),
-    },
+  // Send auto-reply using configured message template
+  const client = createCrispClient({
+    apiKeyId: config.apiKeyId,
+    apiKeySecret: config.apiKeySecret,
   });
 
-  // Send response back to Crisp
-  if (response.text) {
-    const client = createCrispClient({
-      apiKeyId: config.apiKeyId,
-      apiKeySecret: config.apiKeySecret,
+  try {
+    const replyText = config.autoReplyMessage.replace("{name}", visitorName);
+    
+    await client.sendMessage({
+      websiteId: data.website_id,
+      sessionId,
+      content: replyText,
     });
+    console.log(`[crisp] ✅ Sent auto-reply to ${sessionId}`);
 
-    try {
-      await client.sendMessage({
-        websiteId: data.website_id,
-        sessionId,
-        content: response.text,
-      });
-      runtime.log?.info?.(`[crisp] Sent reply to ${sessionId}`);
-
-      // Optionally resolve the conversation
-      if (config.resolveOnReply) {
-        await client.updateConversationState(data.website_id, sessionId, "resolved");
-      }
-    } catch (err) {
-      runtime.log?.error?.(`[crisp] Failed to send reply: ${err}`);
+    // Optionally resolve the conversation
+    if (config.resolveOnReply) {
+      await client.updateConversationState(data.website_id, sessionId, "resolved");
     }
+  } catch (err) {
+    console.error(`[crisp] ❌ Failed to send reply:`, err);
   }
 }
 
@@ -279,6 +260,8 @@ export async function handleCrispWebhookRequest(
   config: CrispConfig,
   accountId: string
 ): Promise<boolean> {
+  console.log(`[crisp] Webhook request: ${req.method} ${req.url}`);
+
   // Only handle POST requests
   if (req.method !== "POST") {
     return false;
@@ -335,6 +318,7 @@ export async function handleCrispWebhookRequest(
     return true;
 
   } catch (err) {
+    console.error(`[crisp] Webhook error:`, err);
     crispRuntime?.log?.error?.(`[crisp] Webhook error: ${err}`);
     res.writeHead(500, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ error: "Internal error" }));
