@@ -226,28 +226,56 @@ async function handleInboundMessage(
     return;
   }
 
-  // Send auto-reply using configured message template
-  const client = createCrispClient({
-    apiKeyId: config.apiKeyId,
-    apiKeySecret: config.apiKeySecret,
-  });
+  // Route message to AI via runtime
+  if (!crispRuntime) {
+    console.error(`[crisp] ❌ Runtime not available, cannot route to AI`);
+    return;
+  }
 
   try {
-    const replyText = config.autoReplyMessage.replace("{name}", visitorName);
-    
+    const aiResponse = await crispRuntime.handleInboundMessage({
+      channel: "crisp",
+      accountId,
+      senderId: sessionId,
+      senderName: visitorName,
+      chatId: sessionId,
+      text: messageText,
+      messageId: data.fingerprint?.toString(),
+      context: {
+        websiteId: data.website_id,
+        origin: data.origin,
+      },
+    });
+
+    if (aiResponse.error) {
+      console.error(`[crisp] ❌ AI error: ${aiResponse.error}`);
+      return;
+    }
+
+    if (!aiResponse.text) {
+      console.log(`[crisp] AI returned empty response, skipping reply`);
+      return;
+    }
+
+    // Send AI response back to Crisp
+    const client = createCrispClient({
+      apiKeyId: config.apiKeyId,
+      apiKeySecret: config.apiKeySecret,
+    });
+
     await client.sendMessage({
       websiteId: data.website_id,
       sessionId,
-      content: replyText,
+      content: aiResponse.text,
     });
-    console.log(`[crisp] ✅ Sent auto-reply to ${sessionId}`);
+    console.log(`[crisp] ✅ Sent AI reply to ${sessionId}`);
 
     // Optionally resolve the conversation
     if (config.resolveOnReply) {
       await client.updateConversationState(data.website_id, sessionId, "resolved");
     }
   } catch (err) {
-    console.error(`[crisp] ❌ Failed to send reply:`, err);
+    console.error(`[crisp] ❌ Failed to handle message:`, err);
   }
 }
 
