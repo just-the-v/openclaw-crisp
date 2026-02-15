@@ -1,0 +1,11 @@
+{
+  "id": "crisp",
+  "name": "Crisp",
+  "description": "Crisp website chat channel for OpenClaw",
+  "channels": ["crisp"],
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": true,
+    "properties": {}
+  }
+}
