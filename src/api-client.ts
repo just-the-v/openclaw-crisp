@@ -8,7 +8,6 @@ import {
   type CrispConversation,
   type CrispMessage,
   type CrispSendMessageParams,
-  type CrispSendMessageResponse,
 } from "./types.js";
 
 export interface CrispApiClientOptions {
@@ -83,7 +82,7 @@ export function createCrispClient(opts: CrispApiClientOptions): CrispApiClient {
         );
       }
 
-      const json = await response.json();
+      const json = await response.json() as { error?: boolean; reason?: string; data?: T };
       
       // Crisp wraps responses in { error: boolean, data: T }
       if (json.error) {
