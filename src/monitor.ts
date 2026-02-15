@@ -234,6 +234,34 @@ async function handleInboundMessage(
     return;
   }
 
+  // Create client for API calls
+  const client = createCrispClient({
+    apiKeyId: config.apiKeyId,
+    apiKeySecret: config.apiKeySecret,
+  });
+
+  // Fetch conversation history for AI context
+  let history: Array<{ role: "user" | "assistant"; content: string }> = [];
+  if (config.historyLimit > 0) {
+    try {
+      const messages = await client.getMessages(
+        data.website_id,
+        sessionId,
+        { limit: config.historyLimit }
+      );
+      // Format messages for AI context (oldest first)
+      history = messages
+        .reverse()
+        .slice(0, -1) // Exclude the current message
+        .map((msg) => ({
+          role: (msg.from === "user" ? "user" : "assistant") as "user" | "assistant",
+          content: msg.content,
+        }));
+    } catch (err) {
+      console.warn(`[crisp] Failed to fetch history: ${err}`);
+    }
+  }
+
   try {
     const aiResponse = await crispRuntime.handleInboundMessage({
       channel: "crisp",
@@ -247,6 +275,7 @@ async function handleInboundMessage(
         websiteId: data.website_id,
         origin: data.origin,
         ...(mediaUrl ? { mediaUrl } : {}),
+        ...(history.length > 0 ? { history } : {}),
       },
     });
 
@@ -261,11 +290,6 @@ async function handleInboundMessage(
     }
 
     // Send AI response back to Crisp
-    const client = createCrispClient({
-      apiKeyId: config.apiKeyId,
-      apiKeySecret: config.apiKeySecret,
-    });
-
     await client.sendMessage({
       websiteId: data.website_id,
       sessionId,

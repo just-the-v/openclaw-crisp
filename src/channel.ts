@@ -113,6 +113,13 @@ export const crispPlugin = {
     groupManagement: false,
   },
 
+  threading: {
+    buildToolContext: ({ context }: { context: Record<string, unknown>; hasRepliedRef?: boolean }) => ({
+      currentChannelId: (context.To as string)?.trim() || undefined,
+      currentThreadTs: context.ReplyToId as string | undefined,
+    }),
+  },
+
   reload: {
     configPrefixes: ["channels.crisp"],
   },
