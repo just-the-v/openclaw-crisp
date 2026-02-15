@@ -1,5 +1,5 @@
 /**
- * OpenClaw Crisp Channel Plugin
+ * Clawdbot Crisp Channel Plugin
  * 
  * Receive and respond to Crisp website chat conversations.
  * 
@@ -7,42 +7,31 @@
  * @see https://crisp.chat
  */
 
-import { crispPlugin, createCrispHttpHandler, setCrispRuntime } from "./src/channel.js";
+import type { ClawdbotPluginApi } from "clawdbot/plugin-sdk";
+import { emptyPluginConfigSchema } from "clawdbot/plugin-sdk";
+
+import { crispPlugin, createCrispHttpHandler } from "./src/channel.js";
+import { setCrispRuntime } from "./src/runtime.js";
 
 // Re-export types for consumers
 export * from "./src/types.js";
 export { createCrispClient } from "./src/api-client.js";
 
 /**
- * Plugin definition for OpenClaw
+ * Plugin definition for Clawdbot
  */
 const plugin = {
   id: "crisp",
   name: "Crisp",
-  description: "Crisp website chat channel for OpenClaw",
-
-  configSchema: {
-    type: "object",
-    additionalProperties: false,
-    properties: {},
-  },
+  description: "Crisp website chat channel for Clawdbot",
+  configSchema: emptyPluginConfigSchema(),
 
   /**
-   * Register the plugin with OpenClaw
+   * Register the plugin with Clawdbot
    */
-  register(api: {
-    runtime: unknown;
-    config: Record<string, unknown>;
-    registerChannel: (opts: { plugin: typeof crispPlugin }) => void;
-    registerHttpHandler: (
-      handler: (
-        req: import("node:http").IncomingMessage,
-        res: import("node:http").ServerResponse
-      ) => Promise<boolean>
-    ) => void;
-  }) {
+  register(api: ClawdbotPluginApi) {
     // Set runtime for webhook handler
-    setCrispRuntime(api.runtime as Parameters<typeof setCrispRuntime>[0]);
+    setCrispRuntime(api.runtime);
 
     // Register the channel plugin
     api.registerChannel({ plugin: crispPlugin });

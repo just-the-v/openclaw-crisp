@@ -1,57 +1,26 @@
 /**
  * Crisp Webhook Handler
  * 
- * Receives HTTP POST requests from Crisp and routes them to OpenClaw.
+ * Receives HTTP POST requests from Crisp and routes them to Clawdbot.
  */
 
 import type { IncomingMessage, ServerResponse } from "node:http";
+import type { ClawdbotConfig } from "clawdbot/plugin-sdk";
 import {
   DEFAULT_WEBHOOK_PATH,
-  buildCrispDashboardUrl,
   type CrispConfig,
   type CrispSessionState,
   type CrispWebhookPayload,
 } from "./types.js";
 import { createCrispClient } from "./api-client.js";
+import { getCrispRuntime, hasCrispRuntime } from "./runtime.js";
 
 // In-memory session tracking for notification deduplication
 const activeSessions = new Map<string, CrispSessionState>();
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
-// Runtime reference (set by plugin registration)
-let crispRuntime: CrispPluginRuntime | null = null;
-
-export interface CrispPluginRuntime {
-  log?: {
-    info?: (msg: string) => void;
-    warn?: (msg: string) => void;
-    error?: (msg: string) => void;
-  };
-  handleInboundMessage: (params: {
-    channel: string;
-    accountId: string;
-    senderId: string;
-    senderName: string;
-    chatId: string;
-    text: string;
-    messageId?: string;
-    replyToId?: string;
-    context?: Record<string, unknown>;
-  }) => Promise<{ text?: string; error?: string }>;
-  sendCrossChannelMessage?: (params: {
-    channel: string;
-    to: string;
-    text: string;
-  }) => Promise<void>;
-}
-
-export function setCrispRuntime(runtime: CrispPluginRuntime): void {
-  crispRuntime = runtime;
-}
-
-export function getCrispRuntime(): CrispPluginRuntime | null {
-  return crispRuntime;
-}
+// Re-export for backward compatibility
+export { setCrispRuntime, getCrispRuntime } from "./runtime.js";
 
 /**
  * Get the configured webhook path
@@ -146,41 +115,11 @@ function trackSession(
 }
 
 /**
- * Send notification for new conversation
- */
-async function notifyNewConversation(
-  config: CrispConfig,
-  session: CrispSessionState
-): Promise<void> {
-  if (!config.notifyOnNew || !config.notifyTarget || !crispRuntime?.sendCrossChannelMessage) {
-    return;
-  }
-
-  const [channel, to] = config.notifyTarget.split(":");
-  if (!channel || !to) {
-    crispRuntime?.log?.warn?.(`Invalid notifyTarget format: ${config.notifyTarget}`);
-    return;
-  }
-
-  const crispUrl = buildCrispDashboardUrl(session.websiteId, session.sessionId);
-  const message = `🆕 **New Crisp conversation**
-
-👤 ${session.visitorName}${session.visitorEmail ? ` (${session.visitorEmail})` : ""}
-
-🔗 [Open in Crisp](${crispUrl})`;
-
-  try {
-    await crispRuntime.sendCrossChannelMessage({ channel, to, text: message });
-  } catch (err) {
-    crispRuntime?.log?.error?.(`Failed to send notification: ${err}`);
-  }
-}
-
-/**
  * Handle inbound message from Crisp
  */
 async function handleInboundMessage(
   config: CrispConfig,
+  clawdbotConfig: ClawdbotConfig,
   accountId: string,
   payload: CrispWebhookPayload
 ): Promise<void> {
@@ -219,7 +158,7 @@ async function handleInboundMessage(
   // Notify on new conversation
   if (session.isNew) {
     console.log(`[crisp] 🆕 New conversation started`);
-    await notifyNewConversation(config, session);
+    // TODO: Cross-channel notification if configured
   }
 
   // Skip if auto-reply is disabled
@@ -228,20 +167,20 @@ async function handleInboundMessage(
     return;
   }
 
-  // Route message to AI via runtime
-  if (!crispRuntime) {
+  // Route message to AI via Clawdbot runtime
+  if (!hasCrispRuntime()) {
     console.error(`[crisp] ❌ Runtime not available, cannot route to AI`);
     return;
   }
 
-  // Create client for API calls
+  const core = getCrispRuntime();
   const client = createCrispClient({
     apiKeyId: config.apiKeyId,
     apiKeySecret: config.apiKeySecret,
   });
 
   // Fetch conversation history for AI context
-  let history: Array<{ role: "user" | "assistant"; content: string }> = [];
+  let historyText = "";
   if (config.historyLimit > 0) {
     try {
       const messages = await client.getMessages(
@@ -249,70 +188,102 @@ async function handleInboundMessage(
         sessionId,
         { limit: config.historyLimit }
       );
-      // Format messages for AI context (oldest first)
-      history = messages
+      // Format messages for context (oldest first, exclude current)
+      const history = messages
         .reverse()
-        .slice(0, -1) // Exclude the current message
-        .map((msg) => ({
-          role: (msg.from === "user" ? "user" : "assistant") as "user" | "assistant",
-          content: msg.content,
-        }));
+        .slice(0, -1)
+        .map((msg) => `${msg.from === "user" ? visitorName : config.operatorName}: ${msg.content}`)
+        .join("\n");
+      if (history) {
+        historyText = `\n\n[Previous messages]\n${history}\n[End of history]`;
+      }
     } catch (err) {
       console.warn(`[crisp] Failed to fetch history: ${err}`);
     }
   }
 
+  // Build body with optional media placeholder
+  const mediaPlaceholder = mediaUrl ? " <media:file>" : "";
+  const body = `${messageText}${mediaPlaceholder}${historyText}`;
+
+  // Resolve agent route
+  const route = core.channel.routing.resolveAgentRoute({
+    cfg: clawdbotConfig,
+    channel: "crisp",
+    accountId,
+    peer: {
+      kind: "dm",
+      id: sessionId,
+    },
+  });
+
+  // Build context payload for Clawdbot
+  const ctxPayload = {
+    Body: body,
+    BodyForAgent: body,
+    RawBody: messageText,
+    CommandBody: messageText,
+    BodyForCommands: messageText,
+    MediaUrl: mediaUrl,
+    From: `crisp:${sessionId}`,
+    To: `crisp:${sessionId}`,
+    SessionKey: route.sessionKey,
+    AccountId: route.accountId,
+    ChatType: "direct",
+    ConversationLabel: visitorName,
+    SenderName: visitorName,
+    SenderId: sessionId,
+    Provider: "crisp",
+    Surface: "crisp",
+    MessageSid: data.fingerprint?.toString(),
+    Timestamp: data.timestamp ? data.timestamp * 1000 : Date.now(),
+    OriginatingChannel: "crisp",
+    OriginatingTo: `crisp:${sessionId}`,
+    WasMentioned: true, // Always true for DMs
+    CommandAuthorized: true, // Crisp visitors can use commands
+  };
+
   try {
-    const aiResponse = await crispRuntime.handleInboundMessage({
-      channel: "crisp",
-      accountId,
-      senderId: sessionId,
-      senderName: visitorName,
-      chatId: sessionId,
-      text: messageText,
-      messageId: data.fingerprint?.toString(),
-      context: {
-        websiteId: data.website_id,
-        origin: data.origin,
-        ...(mediaUrl ? { mediaUrl } : {}),
-        ...(history.length > 0 ? { history } : {}),
+    // Dispatch to Clawdbot reply pipeline
+    await core.channel.reply.dispatchReplyWithBufferedBlockDispatcher({
+      ctx: ctxPayload,
+      cfg: clawdbotConfig,
+      dispatcherOptions: {
+        deliver: async (payload: { text?: string; mediaUrls?: string[]; mediaUrl?: string }) => {
+          const text = payload.text?.trim();
+          if (!text) return;
+
+          // Send response back to Crisp
+          await client.sendMessage({
+            websiteId: data.website_id,
+            sessionId,
+            content: text,
+          });
+          console.log(`[crisp] ✅ Sent AI reply to ${sessionId}`);
+
+          // Optionally resolve the conversation
+          if (config.resolveOnReply) {
+            await client.updateConversationState(data.website_id, sessionId, "resolved");
+          }
+        },
+        onError: (err: unknown) => {
+          console.error(`[crisp] ❌ Reply dispatch error:`, err);
+        },
       },
     });
-
-    if (aiResponse.error) {
-      console.error(`[crisp] ❌ AI error: ${aiResponse.error}`);
-      return;
-    }
-
-    if (!aiResponse.text) {
-      console.log(`[crisp] AI returned empty response, skipping reply`);
-      return;
-    }
-
-    // Send AI response back to Crisp
-    await client.sendMessage({
-      websiteId: data.website_id,
-      sessionId,
-      content: aiResponse.text,
-    });
-    console.log(`[crisp] ✅ Sent AI reply to ${sessionId}`);
-
-    // Optionally resolve the conversation
-    if (config.resolveOnReply) {
-      await client.updateConversationState(data.website_id, sessionId, "resolved");
-    }
   } catch (err) {
     console.error(`[crisp] ❌ Failed to handle message:`, err);
   }
 }
 
 /**
- * Main webhook handler - register with OpenClaw HTTP server
+ * Main webhook handler - register with Clawdbot HTTP server
  */
 export async function handleCrispWebhookRequest(
   req: IncomingMessage,
   res: ServerResponse,
   config: CrispConfig,
+  clawdbotConfig: ClawdbotConfig,
   accountId: string
 ): Promise<boolean> {
   console.log(`[crisp] Webhook request: ${req.method} ${req.url}`);
@@ -332,7 +303,7 @@ export async function handleCrispWebhookRequest(
 
   // Validate webhook secret
   if (!validateWebhookSecret(url, config.webhookSecret)) {
-    crispRuntime?.log?.warn?.(`[crisp] Invalid webhook secret from ${req.socket.remoteAddress}`);
+    console.warn(`[crisp] Invalid webhook secret from ${req.socket.remoteAddress}`);
     res.writeHead(401, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ error: "Invalid secret" }));
     return true;
@@ -342,17 +313,17 @@ export async function handleCrispWebhookRequest(
     // Parse body
     const body = await parseJsonBody(req) as CrispWebhookPayload;
 
-    crispRuntime?.log?.info?.(`[crisp] Received webhook: ${body.event}`);
+    console.log(`[crisp] Received webhook: ${body.event}`);
 
     // Route by event type
     switch (body.event) {
       case "message:send":
-        await handleInboundMessage(config, accountId, body);
+        await handleInboundMessage(config, clawdbotConfig, accountId, body);
         break;
 
       case "session:set_state":
         // Track conversation state changes
-        crispRuntime?.log?.info?.(`[crisp] Conversation ${body.data.session_id} state: ${body.data.state}`);
+        console.log(`[crisp] Conversation ${body.data.session_id} state: ${body.data.state}`);
         break;
 
       case "session:set_email":
@@ -364,7 +335,7 @@ export async function handleCrispWebhookRequest(
         break;
 
       default:
-        crispRuntime?.log?.info?.(`[crisp] Unhandled event: ${body.event}`);
+        console.log(`[crisp] Unhandled event: ${body.event}`);
     }
 
     // Always return 200 to Crisp
@@ -374,7 +345,6 @@ export async function handleCrispWebhookRequest(
 
   } catch (err) {
     console.error(`[crisp] Webhook error:`, err);
-    crispRuntime?.log?.error?.(`[crisp] Webhook error: ${err}`);
     res.writeHead(500, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ error: "Internal error" }));
     return true;

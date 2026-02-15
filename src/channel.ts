@@ -5,7 +5,8 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { CrispConfigSchema, type CrispConfig, type ResolvedCrispAccount } from "./types.js";
 import { createCrispClient } from "./api-client.js";
-import { handleCrispWebhookRequest, resolveWebhookPath, setCrispRuntime } from "./monitor.js";
+import { handleCrispWebhookRequest, resolveWebhookPath } from "./monitor.js";
+import { setCrispRuntime } from "./runtime.js";
 
 // Default account ID for single-account setups
 const DEFAULT_ACCOUNT_ID = "default";
@@ -316,10 +317,20 @@ export const crispPlugin = {
   },
 };
 
+// Store config for HTTP handler access
+let storedClawdbotConfig: Record<string, unknown> | null = null;
+
+export function setClawdbotConfig(cfg: Record<string, unknown>): void {
+  storedClawdbotConfig = cfg;
+}
+
 /**
  * Create HTTP handler for Crisp webhooks
  */
 export function createCrispHttpHandler(cfg: Record<string, unknown>) {
+  // Store config for later use
+  setClawdbotConfig(cfg);
+  
   return async (req: IncomingMessage, res: ServerResponse): Promise<boolean> => {
     // Find which account this webhook is for
     const accountIds = listCrispAccountIds(cfg);
@@ -332,7 +343,15 @@ export function createCrispHttpHandler(cfg: Record<string, unknown>) {
       const url = new URL(req.url ?? "", `http://${req.headers.host}`);
       
       if (url.pathname.startsWith(webhookPath)) {
-        return handleCrispWebhookRequest(req, res, account.config, accountId);
+        // Pass both Crisp config and Clawdbot config
+        const clawdbotCfg = storedClawdbotConfig ?? cfg;
+        return handleCrispWebhookRequest(
+          req, 
+          res, 
+          account.config, 
+          clawdbotCfg as import("clawdbot/plugin-sdk").ClawdbotConfig,
+          accountId
+        );
       }
     }
 
