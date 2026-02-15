@@ -1,6 +1,6 @@
 {
   "name": "openclaw-crisp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "description": "OpenClaw channel plugin for Crisp chat - receive and respond to Crisp conversations",
   "author": "Hugo Vast <hugo.vast@gmail.com>",
@@ -34,7 +34,9 @@
       "docsLabel": "crisp",
       "blurb": "Crisp website chat integration via webhooks + REST API.",
       "order": 80,
-      "aliases": ["crisp-chat"]
+      "aliases": [
+        "crisp-chat"
+      ]
     },
     "install": {
       "npmSpec": "openclaw-crisp",
