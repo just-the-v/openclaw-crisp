@@ -104,7 +104,7 @@ export const crispPlugin = {
 
   capabilities: {
     chatTypes: ["direct"] as const,
-    media: false, // TODO: Add media support
+    media: true,
     reactions: false,
     edit: false,
     unsend: false,
@@ -192,6 +192,46 @@ export const crispPlugin = {
         };
       }
     },
+
+    sendMedia: async (ctx: {
+      cfg: Record<string, unknown>;
+      to: string;
+      mediaUrl: string;
+      accountId?: string;
+    }) => {
+      const { cfg, to, mediaUrl, accountId } = ctx;
+      const account = resolveCrispAccount({ cfg, accountId });
+
+      if (!account.configured) {
+        return { channel: "crisp", ok: false, error: "Crisp not configured" };
+      }
+
+      const client = createCrispClient({
+        apiKeyId: account.config.apiKeyId,
+        apiKeySecret: account.config.apiKeySecret,
+      });
+
+      try {
+        const result = await client.sendMessage({
+          websiteId: account.config.websiteId,
+          sessionId: to,
+          content: mediaUrl,
+          type: "file",
+        });
+
+        return {
+          channel: "crisp",
+          ok: true,
+          messageId: String(result.fingerprint),
+        };
+      } catch (err) {
+        return {
+          channel: "crisp",
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    },
   },
 
   status: {
@@ -201,6 +241,20 @@ export const crispPlugin = {
       lastStartAt: null,
       lastStopAt: null,
       lastError: null,
+    },
+
+    probeAccount: async (params: { account: ResolvedCrispAccount }) => {
+      const { account } = params;
+      if (!account.configured) {
+        return { ok: false as const, error: "Crisp not configured" };
+      }
+
+      const client = createCrispClient({
+        apiKeyId: account.config.apiKeyId,
+        apiKeySecret: account.config.apiKeySecret,
+      });
+
+      return client.probeWebsite(account.config.websiteId);
     },
 
     buildAccountSnapshot: (params: {

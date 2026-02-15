@@ -192,15 +192,17 @@ async function handleInboundMessage(
     return;
   }
 
-  // Skip non-text messages for now
-  if (data.type && data.type !== "text") {
-    console.log(`[crisp] Skipping non-text message type: ${data.type}`);
+  // Skip unsupported message types
+  if (data.type && data.type !== "text" && data.type !== "file") {
+    console.log(`[crisp] Skipping unsupported message type: ${data.type}`);
     return;
   }
 
   const sessionId = data.session_id;
   const visitorName = data.user?.nickname || "Visitor";
-  const messageText = data.content || "";
+  const isFile = data.type === "file";
+  const messageText = isFile ? "" : (data.content || "");
+  const mediaUrl = isFile ? (data.content || "") : undefined;
 
   console.log(`[crisp] 📩 Message from ${visitorName}: "${messageText}"`);
   console.log(`[crisp] Session: ${sessionId}, Website: ${data.website_id}`);
@@ -244,6 +246,7 @@ async function handleInboundMessage(
       context: {
         websiteId: data.website_id,
         origin: data.origin,
+        ...(mediaUrl ? { mediaUrl } : {}),
       },
     });
 
