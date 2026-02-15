@@ -226,14 +226,14 @@ export const crispPlugin = {
       account: ResolvedCrispAccount;
       accountId: string;
       cfg: Record<string, unknown>;
-      runtime: { log?: { info: (m: string) => void } };
+      runtime: { log?: { info?: (m: string) => void } };
       setStatus: (patch: Record<string, unknown>) => void;
       abortSignal: AbortSignal;
     }) => {
       const { account, runtime, setStatus } = ctx;
       const webhookPath = resolveWebhookPath(account.config);
 
-      runtime.log?.info(`[crisp:${account.accountId}] Starting (webhook=${webhookPath})`);
+      runtime.log?.info?.(`[crisp:${account.accountId}] Starting (webhook=${webhookPath})`);
 
       setStatus({
         accountId: account.accountId,
@@ -247,7 +247,7 @@ export const crispPlugin = {
 
       return {
         stop: async () => {
-          runtime.log?.info(`[crisp:${account.accountId}] Stopping`);
+          runtime.log?.info?.(`[crisp:${account.accountId}] Stopping`);
           setStatus({ running: false, lastStopAt: Date.now() });
         },
       };
