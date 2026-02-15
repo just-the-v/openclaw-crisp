@@ -93,21 +93,33 @@ export function updatePendingReplyTelegram(
 }
 
 /**
- * Find pending reply by Telegram message ID
+ * Find pending reply by Telegram message ID (for reply detection)
  */
 export function findPendingReplyByTelegramMessage(
-  telegramChatId: string,
   telegramMessageId: string
 ): PendingReply | null {
   for (const pending of pendingReplies.values()) {
-    if (
-      pending.telegramChatId === telegramChatId &&
-      pending.telegramMessageId === telegramMessageId
-    ) {
+    if (pending.telegramMessageId === telegramMessageId) {
       return pending;
     }
   }
   return null;
+}
+
+/**
+ * Get all pending replies (for debugging/listing)
+ */
+export function getAllPendingReplies(): PendingReply[] {
+  const cutoff = Date.now() - PENDING_REPLY_TTL_MS;
+  const results: PendingReply[] = [];
+  
+  for (const pending of pendingReplies.values()) {
+    if (pending.createdAt >= cutoff) {
+      results.push(pending);
+    }
+  }
+  
+  return results;
 }
 
 /**

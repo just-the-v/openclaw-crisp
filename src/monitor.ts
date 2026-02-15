@@ -15,7 +15,7 @@ import {
 } from "./types.js";
 import { createCrispClient } from "./api-client.js";
 import { getCrispRuntime, hasCrispRuntime } from "./runtime.js";
-import { storePendingReply } from "./pending-replies.js";
+import { storePendingReply, updatePendingReplyTelegram } from "./pending-replies.js";
 import { sendTelegramNotification } from "./telegram-notify.js";
 
 // In-memory session tracking for notification deduplication
@@ -26,7 +26,12 @@ const SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 export { setCrispRuntime, getCrispRuntime } from "./runtime.js";
 
 // Export pending replies functions for external use
-export { getPendingReply, removePendingReply } from "./pending-replies.js";
+export { 
+  getPendingReply, 
+  removePendingReply,
+  findPendingReplyByTelegramMessage,
+  getAllPendingReplies,
+} from "./pending-replies.js";
 
 /**
  * Get the configured webhook path
@@ -310,8 +315,10 @@ async function handleInboundMessage(
           visitorMessage: messageText,
         });
         
-        if (result.ok) {
+        if (result.ok && result.messageId) {
           console.log(`[crisp] 📱 Telegram notification sent (msg ${result.messageId})`);
+          // Store telegram message ID for reply detection
+          updatePendingReplyTelegram(pending.id, String(result.messageId), config.approvalChatId!);
         } else {
           console.error(`[crisp] ❌ Telegram notification failed: ${result.error}`);
         }

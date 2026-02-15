@@ -21,6 +21,10 @@ export {
   removePendingReply, 
   sendCrispReply,
 } from "./src/monitor.js";
+export { 
+  findPendingReplyByTelegramMessage,
+  getAllPendingReplies,
+} from "./src/pending-replies.js";
 export type { PendingReply } from "./src/pending-replies.js";
 
 /**
