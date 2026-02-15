@@ -39,6 +39,12 @@ export const CrispConfigSchema = z.object({
   historyLimit: z.number().int().min(0).max(50).default(10),
   /** Mark conversation resolved after reply */
   resolveOnReply: z.boolean().default(false),
+  /** Human-in-the-loop approval mode: send to Telegram for approval before replying */
+  approvalMode: z.boolean().default(false),
+  /** Telegram chat ID for approval notifications */
+  approvalChatId: z.string().optional(),
+  /** Telegram bot token (from Clawdbot config) */
+  telegramBotToken: z.string().optional(),
 });
 
 export type CrispConfig = z.infer<typeof CrispConfigSchema>;
